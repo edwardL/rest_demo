@@ -1,0 +1,353 @@
+package main
+
+import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/md5"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"log"
+	mathRand "math/rand"
+	"net/http"
+	"net/http/cookiejar"
+	"strings"
+	"time"
+)
+
+// 生成16位MD5哈希值
+func Md516(s string) string {
+	// 先计算32位MD5
+	h := md5.New()
+	h.Write([]byte(s))
+	// 转换为16进制字符串
+	md5Str := hex.EncodeToString(h.Sum(nil))
+	// 取中间16位（8-24位）
+	return md5Str[8:24]
+}
+
+func md532(s string) string {
+	// 先计算32位MD5
+	h := md5.New()
+	h.Write([]byte(s))
+	// 转换为16进制字符串
+	md5Str := hex.EncodeToString(h.Sum(nil))
+	return md5Str
+}
+
+type captchaReqItem struct {
+	Rndtext string `json:"rndtext"` //生成的随机文本
+}
+
+// 验证请求req
+type captchaReq struct {
+	Data []captchaReqItem `json:"data"`
+}
+
+type LoginReqItem struct {
+	UserTs      string `json:"user_ts"`      // 默认写死1
+	UserName    string `json:"user_name"`    // 用户名
+	UserPass    string `json:"user_pass"`    // 加密的密码
+	UserCaptcha string `json:"user_captcha"` // 验证码
+	LoginForce  string `json:"login_force"`  //
+}
+
+// 登录请求Req
+type LoginReq struct {
+	Data []LoginReqItem `json:"data"`
+}
+
+func main() {
+	// 请求者随机生成6位字符串,rndOrig 如ajdfgk
+	rndOrig := "ajdfgk"
+	reqIP := "10.8.0.33"
+	accessKey := "AiclrSlno8c/UxF"
+	// 根据请求IP reqIP与对接密钥secKey(对接密钥联系我们获取) 形成原始字符串 reqIP_secKey  如10.10.10.2_XXXXXX
+	reqIP_secKey := reqIP + "_" + accessKey
+	// 计算第二步MD5值 MD5("10.10.10.2_XXXXXX") 得出加密密钥
+	key := md532(reqIP_secKey)
+	fmt.Println("md5 key ", key)
+
+	finalRndText := hex.EncodeToString([]byte(SitkAesEncrypt([]byte(key), []byte(rndOrig))))
+	fmt.Println("captcha 传参", finalRndText)
+
+	// 2. 创建带 CookieJar 的 HTTP 客户端（核心：自动管理 Cookie）
+	// cookiejar 会自动保存所有接口返回的 Cookie，后续请求同一域名时自动携带
+	// 别的语言估计需要先获取captcha reponse 的cookie, 后面需要设置在login 接口的cookie 请求
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		log.Fatalf("创建 CookieJar 失败：%v", err)
+	}
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Jar:     jar, // 启用 Cookie 自动管理
+	}
+	reqParam := captchaReq{
+		Data: []captchaReqItem{
+			{Rndtext: finalRndText},
+		}}
+	jsonData, _ := json.Marshal(reqParam)
+	// 2. 构建请求体（字节缓冲区）
+	reqBody := bytes.NewBuffer(jsonData)
+	// 3. 创建 POST 请求，指定 content-type 为 application/json
+	req, err := http.NewRequest("POST", "http://192.168.168.168:8224/users/u/captcha4other", reqBody)
+	if err != nil {
+		fmt.Printf("创建请求失败：%v\n", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json") // 关键：告诉服务端是 JSON 格式
+	// 4. 发送请求
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("POST JSON 失败：%v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	// 5. 处理响应
+	body, _ := ioutil.ReadAll(resp.Body)
+	fmt.Printf("JSON 响应：%s\n", body)
+
+	// 处理结果
+	encoded := strings.ReplaceAll(string(body), "data:image/jpeg;base64,", "")
+
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		log.Fatal("解码错误:", err)
+	}
+
+	decyptText := decoded[len(decoded)-304 : len(decoded)-32] // 取最末位304字节，其中前272字节为加密证书，后32字节为验证码加密串
+	decyptVerifyCode := decoded[len(decoded)-32:]
+	//hexDecodedString, err := hex.DecodeString(string(decyptKey)) // 解码第三步
+	//fmt.Println("验证码加密串: ", hexDecodedString)                    // 验证码加密串
+	fmt.Println("加密证书: 开头有换行符: ", string(decyptText)) // 加密证书
+
+	// 从 captcha 接口获取cookie
+	// 需要从captcha 接口获取cookie ， 设置到 login 接口中
+	//rndOrig_reqIP := rndOrig + "_" + reqIP
+	//decodeKey := Md516(rndOrig_reqIP)
+	//fmt.Println("16位md5 ", decodeKey)
+	// 利用第5步的密钥通过AES将第3步解码串进行解密，得到最终的验证码
+	//verifyCodeKey := rndOrig + "_" + reqIP
+	rndOrig_reqIP := rndOrig + "_" + reqIP
+	//decodeKey := Md516(rndOrig_reqIP) // md5 hash16byte 转16进制32字符串 取 8-24
+	decodeKey := rndOrig_reqIP
+	verifyCode := SitkAesDecrypt(decyptVerifyCode, []byte(decodeKey))
+	fmt.Println("verifyCode: ", hex.EncodeToString([]byte(verifyCode)))
+
+	// 通过证书加密登录密码
+	publicKey, err := extractRASPublicKeyFromContent(decyptText)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("=== Go Public Key ===")
+	fmt.Printf("Modulus: %x\n", publicKey.N)
+	fmt.Printf("Exponent: %x\n", publicKey.E)
+	// 用公钥加密密码
+	cipherText, err := encryptPasswordWithPublicKey(publicKey, "edward") // 用户密码
+	if err != nil {
+		fmt.Printf("加密密码失败：%v\n", err)
+		return
+	}
+	fmt.Println("cipherText", cipherText)
+	cipherTextEncode64 := base64.StdEncoding.EncodeToString(cipherText)
+	fmt.Println("cipherTextEncode64", cipherTextEncode64)
+
+	var loginReq = LoginReq{
+		Data: []LoginReqItem{
+			{
+				UserTs:      "1",
+				UserName:    "edward", // 用户名
+				UserPass:    cipherTextEncode64,
+				UserCaptcha: "1234",
+				LoginForce:  "0",
+			},
+		},
+	}
+	jsonData, _ = json.Marshal(loginReq)
+	reqBody = bytes.NewBuffer(jsonData)
+	// 2. 构建请求体（字节缓冲区）
+	reqBody = bytes.NewBuffer(jsonData)
+	// 3. 创建 POST 请求，指定 content-type 为 application/json
+	req, err = http.NewRequest("POST", "http://192.168.168.168:8224/users/u/login", reqBody)
+	if err != nil {
+		fmt.Printf("创建请求失败：%v\n", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json") // 关键：告诉服务端是 JSON 格式
+	// 4. 发送请求
+	resp, err = client.Do(req)
+	if err != nil {
+		fmt.Printf("POST JSON 失败：%v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	// 5. 处理响应
+	body, _ = ioutil.ReadAll(resp.Body)
+	fmt.Printf("JSON 响应：%s\n", body)
+	// 解析返回的json 字符串 可以拿到 user_id , user_ts, user_token 作为接口header 参数
+	// {"result":true,"code":"0000","data":[{"user_ts":"1","user_id":"19000021","user_type":"0","user_name":"ludehua","user_org":"4000112","user_role":"5","user_ts_lst":"1","user_token":"vq7C7NnHzPvm702dCK1mHHFMeVRjoQBVmWEfu6kY47Mtag6CPZ7IYuW4367f62WlD00jfb+Hxyrl9IcGp/K9fd2IO0eYWhnPTeeXefbPpI4SLhgBxC+j8CIvkjT33VGnOLGIwbjBidU4e4Q/JFOd7ku3PJ4F9Th5j82osVWIYhPMGC6KODlgiFypqzayi8IJmZ61VZAxjwylmhl6yTZrbF27D3B4dT4Q6R1+CXIBW+y4adVUGEmPN9VabErlT19B6LoLklNf3IAcIxMMrtZS9Dm73MLt1Clbrg0MYfBRAko=","user_pwd_expiration":"90","user_orgs":{"1":{"belong_orgs":"4000112","under_orgs":"4000112,16000005-16000008"}},"user_roles":{"1":"5"},"menu_url":"/menu/u/getmenu","lock_screentime":0},{"need_show_license_expir_info":0,"agent_license_status":1,"agent_license_expired":"2026-10-01 00:00:00","agent_license_reamin_days":314,"scan_license_status":1,"scan_license_expired":"2124-09-25 23:59:59","scan_license_reamin_days":36103}],"msg":"操作成功! "}
+}
+
+func extractRASPublicKeyFromContent(keyBytes []byte) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode(keyBytes)
+	if block == nil {
+		return nil, fmt.Errorf("无效的 PEM 格式公钥")
+	}
+	if block.Type != "PUBLIC KEY" {
+		return nil, fmt.Errorf("PEM 块类型不是裸公钥（实际：%s）", block.Type)
+	}
+
+	// 3. 解析 PKCS#8 格式公钥（裸公钥默认是 PKCS#8 标准）
+	publicKeyInterface, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("解析公钥失败：%w", err)
+	}
+
+	// 4. 断言公钥为 RSA 类型
+	publicKey, ok := publicKeyInterface.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("公钥不是 RSA 类型（实际：%T）", publicKeyInterface)
+	}
+	return publicKey, nil
+}
+
+// 固定随机数生成器（仅用于测试！）
+// 种子固定为 1024，确保每次运行生成相同的随机填充，相同明文得到相同密文
+var fixedRand = func() *mathRand.Rand {
+	seed := int64(1024) // 固定种子，可修改为任意固定值
+	return mathRand.New(mathRand.NewSource(seed))
+}()
+
+// 用 RSA 公钥加密密码（PKCS1v15 填充，适用于短数据如密码）
+func encryptPasswordWithPublicKey(publicKey *rsa.PublicKey, password string) ([]byte, error) {
+	// 密码转字节流
+	passwordBytes := []byte(password)
+
+	// 校验密码长度（避免超过 RSA 单次加密限制）
+	maxEncryptLen := publicKey.Size() - 11 // PKCS1v15 填充占用 11 字节
+	if len(passwordBytes) > maxEncryptLen {
+		return nil, fmt.Errorf("密码过长（最大支持 %d 字节，当前 %d 字节）", maxEncryptLen, len(passwordBytes))
+	}
+	// RSA 公钥加密（使用随机数生成器确保加密安全性）
+	cipherText, err := rsa.EncryptPKCS1v15(fixedRand, publicKey, passwordBytes)
+	if err != nil {
+		return nil, fmt.Errorf("RSA 加密失败：%w", err)
+	}
+
+	return cipherText, nil
+}
+
+func SitkAesEncrypt(key []byte, data []byte) (tk string) {
+	var md5cipher string
+	defer func() {
+		if err := recover(); err != nil {
+			tk = ""
+		}
+	}()
+
+	if len(data) == 0 {
+		return ""
+	}
+	md5cipher = fmt.Sprintf("%x", md5.Sum(key))
+	block, err := aes.NewCipher([]byte(md5cipher))
+	if err != nil {
+		return ""
+	}
+	//判断加密快的大小
+	blockSize := block.BlockSize()
+	//填充
+	encryptBytes := pkcs7Padding(data, blockSize)
+	//初始化加密数据接收切片
+	crypted := make([]byte, len(encryptBytes))
+	//使用cbc加密模式
+	blockMode := cipher.NewCBCEncrypter(block, key[:blockSize])
+	//执行加密
+	blockMode.CryptBlocks(crypted, encryptBytes)
+	return string(crypted)
+}
+
+// pkcs7Padding 填充
+func pkcs7Padding(data []byte, blockSize int) []byte {
+	//判断缺少几位长度。最少1，最多 blockSize
+	padding := blockSize - len(data)%blockSize
+	//补足位数。把切片[]byte{byte(padding)}复制padding个
+	padText := bytes.Repeat([]byte{byte(padding)}, padding)
+	return append(data, padText...)
+}
+
+// pkcs7UnPadding 填充的反向操作
+func pkcs7UnPadding(data []byte) ([]byte, error) {
+	length := len(data)
+	if length == 0 {
+		return nil, errors.New("加密字符串错误！")
+	}
+	//获取填充的个数
+	unPadding := int(data[length-1])
+	if (length - unPadding) < 0 {
+		return data, nil
+	} else {
+		return data[:(length - unPadding)], nil
+	}
+}
+
+func SitkAesDecrypt(data []byte, key []byte) string {
+	//创建实例
+	var md5cipher string
+	if len(data) == 0 {
+		return ""
+	}
+	md5cipher = fmt.Sprintf("%x", md5.Sum(key))
+	block, err := aes.NewCipher([]byte(md5cipher))
+	if err != nil {
+		return ""
+	}
+	//获取块的大小
+	blockSize := block.BlockSize()
+	//使用cbc
+	blockMode := cipher.NewCBCDecrypter(block, key[:blockSize])
+	//初始化解密数据接收切片
+	crypted := make([]byte, len(data))
+	//执行解密
+	blockMode.CryptBlocks(crypted, data)
+	//去除填充
+	crypted, err = pkcs7UnPadding(crypted)
+	if err != nil {
+		return ""
+	}
+	return string(crypted)
+}
+
+func main2() {
+	rndText := "ajdfgk"
+	ip := "10.10.10.2"
+	encoded := "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"
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		log.Fatal("解码错误:", err)
+	}
+	// fmt.Printf("解码结果: %s\n", decoded) // Hello, World!
+	decyptText := decoded[len(decoded)-303 : len(decoded)-32]
+	hexDecodedString, err := hex.DecodeString(string(decoded[len(decoded)-32:]))
+
+	fmt.Println(hexDecodedString)
+	fmt.Println(string(decyptText))
+
+	keyStr := fmt.Sprintf("%s_%s", rndText, ip)
+
+	key := Md516(keyStr)
+	//
+	fmt.Println(key)
+
+	finalText := SitkAesDecrypt(hexDecodedString, []byte(key))
+	fmt.Println(finalText)
+}

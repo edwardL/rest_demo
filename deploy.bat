@@ -1,0 +1,1 @@
+scp -P22  .\rest_demo edward1022@192.168.199.131:/tmp

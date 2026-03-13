@@ -1,0 +1,87 @@
+# 监听地址
+ api.address: 0.0.0.0:8989
+
+# 访问地址
+ api.endpoint: http://localhost:8989
+
+# 连接可以空闲的最长时间
+ db.master.conn-max-idle-time: 0s
+
+# 连接可复用的最大时间
+ db.master.conn-max-lifetime: 1h0m0s
+
+# 数据库驱动
+ db.master.driver: mysql
+# db.master.dsn: "test.db"
+#db.master.dsn: postgresql://edward:edward@192.168.50.60:5432/test
+# 数据库连接
+ db.master.dsn: edward:edward@tcp(192.168.199.131:3306)/edward?charset=utf8mb4&parseTime=True&loc=Local
+
+# 数据库日志打印级别,默认为空,可选[error|warn|info]
+ db.master.log-level: info
+
+# 连接池中空闲连接的最大数量
+ db.master.max-idle-conn: 10
+
+# 打开数据库连接的最大数量
+ db.master.max-open-conn: 100
+
+# 连接可以空闲的最长时间
+ db.slave.conn-max-idle-time: 0s
+
+# 连接可复用的最大时间
+ db.slave.conn-max-lifetime: 1h0m0s
+
+# 数据库驱动
+ db.slave.driver: mysql
+# db.slave.dsn: "test.db"
+# 数据库连接
+ db.slave.dsn: edward:edward@tcp(192.168.199.131:3306)/edward?charset=utf8mb4&parseTime=True&loc=Local
+
+# 数据库日志打印级别,默认为空,可选[error|warn|info]
+ db.slave.log-level: info
+
+# 连接池中空闲连接的最大数量
+ db.slave.max-idle-conn: 10
+
+# 打开数据库连接的最大数量
+ db.slave.max-open-conn: 100
+
+# redis
+ redis.host: "192.168.199.131"
+
+# 日志打开开发模式
+ log.development: true
+
+# 日志输出格式,可选[json|console]
+ log.encoder: console
+
+# 日志输出文件
+ log.file: /root/rest_demo/running.log
+
+# 日志文件保留天数
+ log.file-age: 0
+
+# 最大保留日志文件数量
+ log.file-backups: 10
+
+# 日志文件大小限制,单位MB
+ log.file-size: 500
+
+# 日志输出级别,可选[debug|info|warning|error|fatal]
+ log.level: debug
+
+# 日志输出方式,可选[any|file|console]
+ log.output: any
+
+ wechat-pay.api-key: ""
+ 
+ wechat-pay.app-id: ""
+ 
+ wechat-pay.mch-id: ""
+ 
+ wechat-pay.mch-serial-no: "62654840A5371F2F5770AD996D2DEBCE249CB107"
+ 
+ wechat-pay.notify-url: ""
+ 
+ wechat-pay.private-key-path: ""
