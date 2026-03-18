@@ -1,0 +1,197 @@
+package performance_test
+
+import (
+	"encoding/json"
+	"github.com/bytedance/sonic"
+	"nwgit.gzhhit.com/BD/hhitcommcode.git/utils/gdb"
+	"testing"
+	"time"
+)
+
+// TestStruct 用于测试的结构体
+type TestStruct struct {
+	ID        int       `json:"id" gdb:"id"`
+	Name      string    `json:"name" gdb:"name"`
+	Age       int       `json:"age" gdb:"age"`
+	CreatedAt time.Time `json:"created_at" gdb:"created_at"`
+	Email     string    `json:"email" gdb:"email"`
+	Address   string    `json:"address" gdb:"address"`
+	Active    bool      `json:"active" gdb:"active"`
+}
+
+// prepareTestData 准备测试数据
+func prepareTestData(count int) ([]map[string]any, []TestStruct, []byte) {
+	maps := make([]map[string]any, count)
+	structs := make([]TestStruct, count)
+
+	for i := 0; i < count; i++ {
+		maps[i] = map[string]any{
+			"id":         i,
+			"name":       "User" + string(rune(i%1000)),
+			"age":        20 + i%50,
+			"created_at": time.Now().Add(time.Duration(i) * time.Hour),
+			"email":      "user" + string(rune(i%1000)) + "@example.com",
+			"address":    "Address " + string(rune(i%100)),
+			"active":     i%2 == 0,
+		}
+		structs[i] = TestStruct{
+			ID:        i,
+			Name:      "User" + string(rune(i%1000)),
+			Age:       20 + i%50,
+			CreatedAt: time.Now().Add(time.Duration(i) * time.Hour),
+			Email:     "user" + string(rune(i%1000)) + "@example.com",
+			Address:   "Address " + string(rune(i%100)),
+			Active:    i%2 == 0,
+		}
+	}
+
+	// 将结构体序列化为JSON用于测试
+	jsonBytes, _ := sonic.Marshal(structs)
+
+	return maps, structs, jsonBytes
+}
+
+// BenchmarkMapToStructGDB 测试 MapToStruct 性能
+func BenchmarkMapToStructGDB(b *testing.B) {
+	maps, _, _ := prepareTestData(1)
+	var result TestStruct
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = gdb.MapToStruct(maps[0], &result)
+	}
+}
+
+// BenchmarkMapToStructJSON 测试 JSON Unmarshal 性能
+func BenchmarkMapToStructJSON(b *testing.B) {
+	maps, _, _ := prepareTestData(1)
+	var result TestStruct
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jsonBytes, _ := json.Marshal(maps[0])
+		_ = json.Unmarshal(jsonBytes, &result)
+	}
+}
+
+// BenchmarkMapToStructSonic 测试 Sonic Unmarshal 性能
+func BenchmarkMapToStructSonic(b *testing.B) {
+	maps, _, _ := prepareTestData(1)
+	var result TestStruct
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jsonBytes, _ := sonic.Marshal(maps[0])
+		_ = sonic.Unmarshal(jsonBytes, &result)
+	}
+}
+
+// BenchmarkMapsToStructGDB 测试 MapsToStruct 性能
+func BenchmarkMapsToStructGDB(b *testing.B) {
+	count := 100
+	maps, _, _ := prepareTestData(count)
+	var result []TestStruct
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		result = make([]TestStruct, 0, count)
+		_ = gdb.MapsToStruct(maps, &result)
+	}
+}
+
+// BenchmarkMapsToStructJSON 测试 JSON Unmarshal 切片性能
+func BenchmarkMapsToStructJSON(b *testing.B) {
+	count := 100
+	maps, _, _ := prepareTestData(count)
+	var result []TestStruct
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jsonBytes, _ := json.Marshal(maps)
+		_ = json.Unmarshal(jsonBytes, &result)
+	}
+}
+
+// BenchmarkMapsToStructSonic 测试 Sonic Unmarshal 切片性能
+func BenchmarkMapsToStructSonic(b *testing.B) {
+	count := 100
+	maps, _, _ := prepareTestData(count)
+	var result []TestStruct
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jsonBytes, _ := sonic.Marshal(maps)
+		_ = sonic.Unmarshal(jsonBytes, &result)
+	}
+}
+
+// BenchmarkStructToMapGDB 测试 StructToMap 性能
+func BenchmarkStructToMapGDB(b *testing.B) {
+	_, structs, _ := prepareTestData(1)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = gdb.StructToMap(structs[0])
+	}
+}
+
+// BenchmarkStructToMapJSON 测试 JSON Marshal + 转换为map性能
+func BenchmarkStructToMapJSON(b *testing.B) {
+	_, structs, _ := prepareTestData(1)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jsonBytes, _ := json.Marshal(structs[0])
+		var m map[string]any
+		_ = json.Unmarshal(jsonBytes, &m)
+	}
+}
+
+// BenchmarkStructToMapSonic 测试 Sonic Marshal + 转换为map性能
+func BenchmarkStructToMapSonic(b *testing.B) {
+	_, structs, _ := prepareTestData(1)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jsonBytes, _ := sonic.Marshal(structs[0])
+		var m map[string]any
+		_ = sonic.Unmarshal(jsonBytes, &m)
+	}
+}
+
+// BenchmarkStructToMapsGDB 测试 StructToMaps 性能
+func BenchmarkStructToMapsGDB(b *testing.B) {
+	count := 100
+	_, structs, _ := prepareTestData(count)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = gdb.StructToMaps(structs)
+	}
+}
+
+// BenchmarkStructToMapsJSON 测试 JSON Marshal + 转换为maps切片性能
+func BenchmarkStructToMapsJSON(b *testing.B) {
+	count := 100
+	_, structs, _ := prepareTestData(count)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jsonBytes, _ := json.Marshal(structs)
+		var ms []map[string]any
+		_ = json.Unmarshal(jsonBytes, &ms)
+	}
+}
+
+// BenchmarkStructToMapsSonic 测试 Sonic Marshal + 转换为maps切片性能
+func BenchmarkStructToMapsSonic(b *testing.B) {
+	count := 100
+	_, structs, _ := prepareTestData(count)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jsonBytes, _ := sonic.Marshal(structs)
+		var ms []map[string]any
+		_ = sonic.Unmarshal(jsonBytes, &ms)
+	}
+}

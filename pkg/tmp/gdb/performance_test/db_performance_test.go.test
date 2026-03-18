@@ -1,0 +1,300 @@
+package performance_test
+
+import (
+	"fmt"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	"nwgit.gzhhit.com/BD/hhitcommcode.git/utils/gdb"
+	hhdb "nwgit.gzhhit.com/BD/hhitdb.git"
+	hhlog "nwgit.gzhhit.com/BD/hhitlog.git"
+	"testing"
+	"time"
+)
+
+var gormDB *gorm.DB
+
+// UserPerformanceTest 用户性能测试结构体
+type UserPerformanceTest struct {
+	ID       int    `gorm:"primaryKey" json:"id" gdb:"id"`
+	Name     string `gorm:"column:name;type:varchar(255)" json:"name" gdb:"name"`
+	Age      int    `gorm:"column:age;type:int" json:"age" gdb:"age"`
+	Email    string `gorm:"column:email;type:varchar(255)" json:"email" gdb:"email"`
+	Active   bool   `gorm:"column:active;type:tinyint(1)" json:"active" gdb:"active"`
+	CreateTs int64  `gorm:"column:create_ts;type:bigint" json:"create_ts" gdb:"create_ts"`
+}
+
+// TableName 指定表名
+func (UserPerformanceTest) TableName() string {
+	return "users_performance_test"
+}
+
+func dbInit() {
+	_ = hhlog.InitLog(hhlog.SLogConf{
+		BaseConf: hhlog.SBaseLogConf{
+			LogLevel: "debug",
+		},
+		FileConf: hhlog.SLogFileConf{},
+	}, "", nil)
+	var err error
+	var dbConf = map[string]string{
+		"db_host":            "127.0.0.1",
+		"db_port":            "3306",
+		"db_user":            "root",
+		"db_pass":            "123456",
+		"db_name":            "pt",
+		"db_charset":         "utf8mb4",
+		"db_type":            "mysql",
+		"need_mode_onebyone": "1",
+	}
+	err = hhdb.InitDB(dbConf["db_type"], &dbConf)
+	if err != nil {
+		fmt.Println("HHDB Init Error:", err)
+		// 不直接返回，继续尝试初始化GORM
+	}
+
+	// 初始化 GORM
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=%s&parseTime=True&loc=Local",
+		dbConf["db_user"], dbConf["db_pass"], dbConf["db_host"],
+		dbConf["db_port"], dbConf["db_name"], dbConf["db_charset"])
+
+	gormDB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent), // 设置为静默模式
+	})
+	if err != nil {
+		fmt.Println("GORM Init Error:", err)
+		return // 如果GORM初始化失败，设置标志并返回
+	}
+}
+
+// createTestData 创建测试数据
+func createTestData() error {
+	dbInit()
+	if gormDB == nil {
+		return fmt.Errorf("GORM database connection is nil")
+	}
+
+	// 检查表是否存在，如果不存在则创建
+	if err := gormDB.AutoMigrate(&UserPerformanceTest{}); err != nil {
+		return fmt.Errorf("failed to migrate table: %v", err)
+	}
+
+	// 检查是否已经有测试数据
+	var count int64
+	if err := gormDB.Model(&UserPerformanceTest{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("failed to count records: %v", err)
+	}
+
+	// 如果表为空或数据不足10000条，则创建测试数据
+	if count < 10000 {
+		// 先删除表中所有数据，避免ID冲突
+		if err := gormDB.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&UserPerformanceTest{}).Error; err != nil {
+			return fmt.Errorf("failed to clear existing data: %v", err)
+		}
+
+		fmt.Println("Creating large test data...")
+		users := make([]UserPerformanceTest, 0, 10000)
+		for i := 0; i < 10000; i++ {
+			users = append(users, UserPerformanceTest{
+				ID:       i + 1,
+				Name:     fmt.Sprintf("User_%d", i+1),
+				Age:      18 + (i % 50),
+				Email:    fmt.Sprintf("user%d@example.com", i+1),
+				Active:   i%2 == 0,
+				CreateTs: time.Now().Unix(),
+			})
+		}
+
+		// 批量插入测试数据
+		if err := gormDB.Create(&users).Error; err != nil {
+			return fmt.Errorf("failed to create test data: %v", err)
+		}
+		fmt.Printf("Successfully created %d test records\n", len(users))
+
+		// 重新获取总数
+		if err := gormDB.Model(&UserPerformanceTest{}).Count(&count).Error; err != nil {
+			return fmt.Errorf("failed to count records after insert: %v", err)
+		}
+		fmt.Printf("Total records in table: %d\n", count)
+	} else {
+		fmt.Printf("Table already has %d records, skipping data creation\n", count)
+	}
+
+	return nil
+}
+
+// BenchmarkGormSelectLarge GORM查询性能测试（大数据量）
+func BenchmarkGormSelectLarge(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var users []UserPerformanceTest
+		result := gormDB.Limit(1000).Find(&users) // 查询1000条记录
+		if result.Error != nil {
+			b.Fatal("GORM query failed:", result.Error)
+		}
+	}
+}
+
+// BenchmarkGdbSelectLarge GDB查询性能测试（大数据量）
+func BenchmarkGdbSelectLarge(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var users []UserPerformanceTest
+		err := gdb.New("users_performance_test").Limit("?", 1000).Select(&users).Error // 查询1000条记录
+		if err != nil {
+			b.Fatal("GDB query failed:", err)
+		}
+	}
+}
+
+// BenchmarkGormSelectMedium GORM中等数据量查询性能测试
+func BenchmarkGormSelectMedium(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var users []UserPerformanceTest
+		result := gormDB.Limit(500).Find(&users) // 查询500条记录
+		if result.Error != nil {
+			b.Fatal("GORM query failed:", result.Error)
+		}
+	}
+}
+
+// BenchmarkGdbSelectMedium GDB中等数据量查询性能测试
+func BenchmarkGdbSelectMedium(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var users []UserPerformanceTest
+		err := gdb.New("users_performance_test").Limit("?", 500).Select(&users).Error // 查询500条记录
+		if err != nil {
+			b.Fatal("GDB query failed:", err)
+		}
+	}
+}
+
+// BenchmarkGormSelectSingle GORM单条查询性能测试
+func BenchmarkGormSelectSingle(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var user UserPerformanceTest
+		result := gormDB.First(&user, i%10000+1) // 使用更大的ID范围
+		if result.Error != nil && result.Error != gorm.ErrRecordNotFound {
+			b.Fatal("GORM single query failed:", result.Error)
+		}
+	}
+}
+
+// BenchmarkGdbSelectSingle GDB单条查询性能测试
+func BenchmarkGdbSelectSingle(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var user UserPerformanceTest
+		err := gdb.New("users_performance_test").Where("id = ?", i%10000+1).One(&user).Error // 使用更大的ID范围
+		if err != nil {
+			b.Fatal("GDB single query failed:", err)
+		}
+	}
+}
+
+// BenchmarkGormUpdate GORM更新性能测试
+func BenchmarkGormUpdate(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		userID := i%10000 + 1 // 使用更大的ID范围
+		result := gormDB.Model(&UserPerformanceTest{}).Where("id = ?", userID).Update("name", fmt.Sprintf("UpdatedUser_%d", userID))
+		if result.Error != nil {
+			b.Fatal("GORM update failed:", result.Error)
+		}
+	}
+}
+
+// BenchmarkGdbUpdate GDB更新性能测试
+func BenchmarkGdbUpdate(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		userID := i%10000 + 1 // 使用更大的ID范围
+		err := gdb.New("users_performance_test").Where("id = ?", userID).Update("name", fmt.Sprintf("UpdatedUser_%d", userID)).Error
+		if err != nil {
+			b.Fatal("GDB update failed:", err)
+		}
+	}
+}
+
+// BenchmarkGormInsert GORM插入性能测试
+func BenchmarkGormInsert(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		user := UserPerformanceTest{
+			Name:     fmt.Sprintf("InsertUser_%d", i),
+			Age:      20 + (i % 40),
+			Email:    fmt.Sprintf("insert%d@example.com", i),
+			Active:   true,
+			CreateTs: time.Now().Unix(),
+		}
+		result := gormDB.Create(&user)
+		if result.Error != nil {
+			b.Fatal("GORM insert failed:", result.Error)
+		}
+		// 删除插入的数据，避免后续测试冲突
+		gormDB.Delete(&user)
+	}
+}
+
+// BenchmarkGdbInsert GDB插入性能测试
+func BenchmarkGdbInsert(b *testing.B) {
+	if err := createTestData(); err != nil {
+		b.Fatal("Failed to create test data:", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		user := UserPerformanceTest{
+			Name:     fmt.Sprintf("InsertUser_%d", i),
+			Age:      20 + (i % 40),
+			Email:    fmt.Sprintf("insert%d@example.com", i),
+			Active:   true,
+			CreateTs: time.Now().Unix(),
+		}
+		err := gdb.New("users_performance_test").Create(user).Error
+		if err != nil {
+			b.Fatal("GDB insert failed:", err)
+		}
+		// 删除插入的数据，避免后续测试冲突
+		gdb.New("users_performance_test").Where("name = ?", user.Name).Delete()
+	}
+}
