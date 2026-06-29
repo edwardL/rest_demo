@@ -18,6 +18,7 @@ import (
 	"rest_demo/pkg/cache"
 	"rest_demo/pkg/db"
 	"rest_demo/pkg/jwt"
+	"rest_demo/pkg/llm"
 	"rest_demo/pkg/payment/wechat"
 	"rest_demo/pkg/redis"
 	"rest_demo/pkg/server/http"
@@ -26,7 +27,7 @@ import (
 
 // Injectors from wire.go:
 
-func NewApp(contextContext context.Context, logger *zap.Logger, msConfig *db.MsConfig, config *http.Config, serviceConfig *service.Config, jwtConfig *jwt.Config, redisConfig *redis.Config, weChatPayConfig *wechat.WeChatPayConfig, cacheConfig *cache.Config) (*app.App, func(), error) {
+func NewApp(contextContext context.Context, logger *zap.Logger, msConfig *db.MsConfig, config *http.Config, serviceConfig *service.Config, jwtConfig *jwt.Config, redisConfig *redis.Config, weChatPayConfig *wechat.WeChatPayConfig, cacheConfig *cache.Config, llmConfig *llm.Config) (*app.App, func(), error) {
 	jwtJWT := jwt.NewJWT(jwtConfig)
 	cacheCache, err := cache.NewCache(cacheConfig)
 	if err != nil {
@@ -43,11 +44,13 @@ func NewApp(contextContext context.Context, logger *zap.Logger, msConfig *db.MsC
 	loginService := service.NewLoginService(serviceService, sysUserRepository)
 	jsapiClient := wechat.NewJSAPIClient(weChatPayConfig)
 	loginHandler := handler.NewLoginHandler(loginService, jsapiClient)
+	llmService := service.NewLLMService(llmConfig, logger)
+	llmHandler := handler.NewLLMHandler(llmService, llmConfig, logger)
 	client, err := redis.NewRedis(redisConfig)
 	if err != nil {
 		return nil, nil, err
 	}
-	httpServer := server.NewHTTPServer(logger, config, jwtJWT, loginHandler, client)
+	httpServer := server.NewHTTPServer(logger, config, jwtJWT, loginHandler, llmHandler, client)
 	appApp := newApp(httpServer)
 	return appApp, func() {
 	}, nil
@@ -57,9 +60,9 @@ func NewApp(contextContext context.Context, logger *zap.Logger, msConfig *db.MsC
 
 var repositorySet = wire.NewSet(db.NewMsDB, jwt.NewJWT, redis.NewRedis, cache.NewCache, wechat.NewJSAPIClient, websocket.NewWsManager, repository.NewRepository, repository.NewSysUserRepository)
 
-var serviceSet = wire.NewSet(service.NewService, service.NewLoginService)
+var serviceSet = wire.NewSet(service.NewService, service.NewLoginService, service.NewLLMService)
 
-var handlerSet = wire.NewSet(handler.NewLoginHandler)
+var handlerSet = wire.NewSet(handler.NewLoginHandler, handler.NewLLMHandler)
 
 var serverSet = wire.NewSet(server.NewHTTPServer)
 

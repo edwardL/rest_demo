@@ -13,6 +13,7 @@ import (
 	"rest_demo/pkg/cache"
 	"rest_demo/pkg/db"
 	"rest_demo/pkg/jwt"
+	"rest_demo/pkg/llm"
 	"rest_demo/pkg/payment/wechat"
 	"rest_demo/pkg/redis"
 	"rest_demo/pkg/websocket"
@@ -39,10 +40,12 @@ var repositorySet = wire.NewSet(
 var serviceSet = wire.NewSet(
 	service.NewService,
 	service.NewLoginService,
+	service.NewLLMService,
 )
 
 var handlerSet = wire.NewSet(
 	handler.NewLoginHandler,
+	handler.NewLLMHandler,
 )
 
 var serverSet = wire.NewSet(
@@ -67,6 +70,7 @@ func NewApp(context.Context, *zap.Logger,
 	*redis.Config,
 	*wechat.WeChatPayConfig,
 	*cache.Config,
+	*llm.Config,
 ) (*app.App, func(), error) {
 	panic(wire.Build(repositorySet, serviceSet, handlerSet, serverSet, newApp))
 }

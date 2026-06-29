@@ -85,3 +85,9 @@
  wechat-pay.notify-url: ""
  
  wechat-pay.private-key-path: ""
+
+# LLM API 配置
+ llm.endpoint: "https://api.deepseek.com/chat/completions"
+ llm.api-key: ""
+ llm.model: "deepseek-chat"
+ llm.timeout: 60s

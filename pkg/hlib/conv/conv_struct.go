@@ -88,3 +88,8 @@ type StructTag struct {
 	Name string
 	Type string
 }
+
+func getStructTag(field reflect.StructField) StructTag {
+	tag := field.Tag.Get("json")
+	return StructTag{Name: tag, Type: field.Type.String()}
+}

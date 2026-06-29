@@ -4,33 +4,40 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"reflect"
-	"rest_demo/pkg/log"
 	"rest_demo/pkg/utils/arrays"
 	"rest_demo/pkg/utils/str"
 	"strings"
 )
 
 const (
-	TagFlag            = "orm"         // ORM Tag标记
-	TagPrimaryKeyFlag  = "primary_key" // ORM 主键标记
-	TableNameMethod    = "TableName"   // ORM 表名方法
-	TableAliasMethod   = "TableAlias"  // ORM 表别名方法
-	TagFlagCreateFalse = "c:false"     // 禁止插入
-	TagFlagUpdateFalse = "u:false"     // 禁止修改
-	TagColName         = "col_name"    // ORM 取db字段时用的名称，否则对字段名进行转换（注意，不取json tag）
+	TagFlag            = "orm"
+	TagPrimaryKeyFlag  = "primary_key"
+	TableNameMethod    = "TableName"
+	TableAliasMethod   = "TableAlias"
+	TagFlagCreateFalse = "c:false"
+	TagFlagUpdateFalse = "u:false"
+	TagColName         = "col_name"
 )
 
-// GetDB 获取DB对象
-func GetDB() *sql.DB {
-	return hhdb.GetDBOP().GetDBObj()
-}
+var (
+	Error = log.New(os.Stderr, "[ORM ERROR] ", log.LstdFlags)
+	Debug = log.New(os.Stdout, "[ORM DEBUG] ", log.LstdFlags)
+)
+
+var db *sql.DB
+
+func SetDB(d *sql.DB) { db = d }
+
+func GetDB() *sql.DB { return db }
 
 // Begin 开启事务
 func Begin() (*sql.Tx, error) {
 	begin, err := GetDB().Begin()
 	if err != nil {
-		log.Error.Println(err)
+		Error.Println(err)
 	}
 	return begin, err
 }
@@ -39,7 +46,7 @@ func Begin() (*sql.Tx, error) {
 func Query[T any](query string, args ...any) ([]*T, error) {
 	rows, err := GetDB().Query(query, args...)
 	if err != nil {
-		log.Error.Print(err)
+		Error.Print(err)
 		return []*T{}, err
 	}
 	defer func(rows *sql.Rows) {
@@ -47,7 +54,7 @@ func Query[T any](query string, args ...any) ([]*T, error) {
 	}(rows)
 	columns, err := rows.Columns()
 	if err != nil {
-		log.Error.Print(err)
+		Error.Print(err)
 		return []*T{}, err
 	}
 	var result []*T
@@ -56,12 +63,12 @@ func Query[T any](query string, args ...any) ([]*T, error) {
 		_, dest := GetFieldPointerFilter(item, columns...)
 		err = rows.Scan(dest...)
 		if err != nil {
-			log.Error.Print(err)
+			Error.Print(err)
 			return []*T{}, err
 		}
 		result = append(result, item)
 	}
-	log.Debug.Printf("<==      Total: %d", len(result))
+	Debug.Printf("<==      Total: %d", len(result))
 	return result, nil
 }
 
@@ -69,7 +76,7 @@ func Query[T any](query string, args ...any) ([]*T, error) {
 func QueryOne[T any](query string, args ...any) (*T, error) {
 	rows, err := GetDB().Query(query, args...)
 	if err != nil {
-		log.Error.Print(err)
+		Error.Print(err)
 		return nil, err
 	}
 	defer func(rows *sql.Rows) {
@@ -77,7 +84,7 @@ func QueryOne[T any](query string, args ...any) (*T, error) {
 	}(rows)
 	columns, err := rows.Columns()
 	if err != nil {
-		log.Error.Print(err)
+		Error.Print(err)
 		return nil, err
 	}
 	if rows.Next() {
@@ -85,13 +92,13 @@ func QueryOne[T any](query string, args ...any) (*T, error) {
 		_, dest := GetFieldPointerFilter(item, columns...)
 		err = rows.Scan(dest...)
 		if err != nil {
-			log.Error.Print(err)
+			Error.Print(err)
 			return nil, err
 		}
-		log.Debug.Printf("<==      Total: %d", 1)
+		Debug.Printf("<==      Total: %d", 1)
 		return item, nil
 	}
-	log.Debug.Printf("<==      Total: %d", 0)
+	Debug.Printf("<==      Total: %d", 0)
 	return nil, nil
 }
 
@@ -115,20 +122,20 @@ func TExec(tx *sql.Tx, sqlString string, args ...any) (int64, int64, error) {
 		result, err = GetDB().Exec(sqlString, args...)
 	}
 	if err != nil {
-		log.Error.Print(err)
+		Error.Print(err)
 		return 0, 0, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		log.Error.Print(err)
+		Error.Print(err)
 		return affected, 0, err
 	}
 	insertId, err := result.LastInsertId()
 	if err != nil {
-		log.Error.Print(err)
+		Error.Print(err)
 		return affected, insertId, err
 	}
-	log.Debug.Printf("<==   Affected: %v", affected)
+	Debug.Printf("<==   Affected: %v", affected)
 	return affected, insertId, err
 }
 
@@ -271,7 +278,7 @@ func TCreate[T any](tx *sql.Tx, model *T) (*T, error) {
 		return model, err
 	}
 	if affected != 1 {
-		log.Error.Printf("sql: Affected %d", affected)
+		Error.Printf("sql: Affected %d", affected)
 		return model, err
 	}
 	_, v := getFieldReflectByTag(model, TagPrimaryKeyFlag)
@@ -470,12 +477,12 @@ func GetTableName(model any) string {
 	var name string
 	v := reflect.ValueOf(model)
 	if v.Kind() != reflect.Pointer {
-		log.Error.Printf("orm: check type error not Pointer")
+		Error.Printf("orm: check type error not Pointer")
 		return name
 	}
 	nameMethod := v.MethodByName(TableNameMethod)
 	if nameMethod.Kind() == 0 {
-		log.Error.Printf("orm: " + v.String() + " not found " + TableNameMethod)
+		Error.Printf("orm: " + v.String() + " not found " + TableNameMethod)
 		return name
 	}
 	return nameMethod.Call(nil)[0].String()
@@ -692,12 +699,12 @@ func containsColumn(columnList []string, column string) bool {
 func getReflectType(model any) (reflect.Type, error) {
 	p := reflect.TypeOf(model)
 	if p.Kind() != reflect.Pointer {
-		log.Error.Printf("orm: check type error not Pointer")
+		Error.Printf("orm: check type error not Pointer")
 		return nil, errors.New("orm: check type error not Pointer")
 	}
 	s := p.Elem()
 	if s.Kind() != reflect.Struct {
-		log.Error.Printf("orm: check type error not Struct")
+		Error.Printf("orm: check type error not Struct")
 		return nil, errors.New("orm: check type error not Pointer")
 	}
 	return s, nil
@@ -707,12 +714,12 @@ func getReflectType(model any) (reflect.Type, error) {
 func getReflectValue(model any) (reflect.Value, error) {
 	v := reflect.ValueOf(model)
 	if v.Kind() != reflect.Pointer {
-		log.Error.Printf("orm: check type error not Pointer")
+		Error.Printf("orm: check type error not Pointer")
 		return v, errors.New("orm: check type error not Pointer")
 	}
 	e := v.Elem()
 	if e.Kind() != reflect.Struct {
-		log.Error.Printf("orm: check type error not Struct")
+		Error.Printf("orm: check type error not Struct")
 		return e, errors.New("orm: check type error not Pointer")
 	}
 	return e, nil

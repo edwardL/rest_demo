@@ -26,10 +26,5 @@ func (t *DbTx) GetTx() *Tx {
 
 // Begin 开启事务
 func Begin() (*Tx, error) {
-	if err != nil {
-		return nil, err
-	}
-	return &Tx{
-		Tx: begin,
-	}, nil
+	return nil, errors.New("Begin: requires DB instance, use db.Transaction() instead")
 }

@@ -21,7 +21,7 @@ type Config struct {
 	SSTDataBlockSize int    // sst table 中 block 大小 默认 16KB
 	SSTFooterSize    int    // sst table 中 footer 部分大小. 固定为 32B
 
-	// Filter              filter.Filter                // 过滤器. 默认使用布隆过滤器
+	Filter              Filter                       // 过滤器. 默认使用布隆过滤器
 	MemTableConstructor memtable.MemTableConstructor // memtable 构造器，默认为跳表
 }
 

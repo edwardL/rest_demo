@@ -17,6 +17,7 @@ func NewHTTPServer(
 	conf *http.Config,
 	jwt *jwt.JWT,
 	loginHandler *handler.LoginHandler,
+	llmHandler *handler.LLMHandler,
 	redisClient *redis.Client,
 ) *http.Server {
 	switch cfgstruct.DefaultsType() {
@@ -45,6 +46,10 @@ func NewHTTPServer(
 	s.POST("wsplay", loginHandler.Wsplay)
 
 	s.GET("/stream", loginHandler.Stream)
+
+	s.POST("llm/chat", llmHandler.Chat)
+	s.POST("llm/workflow", llmHandler.Workflow)
+	s.GET("llm/topics", llmHandler.GetTopics)
 
 	return s
 }

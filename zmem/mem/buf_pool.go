@@ -2,6 +2,11 @@ package mem
 
 import "sync"
 
+type Buf struct {
+	Size int
+	Data []byte
+}
+
 const (
 	m4K   = 4096
 	m16K  = 16 * 1024

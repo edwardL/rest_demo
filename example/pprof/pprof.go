@@ -27,7 +27,7 @@ func test() {
 	log.Println("====> loop end.")
 }
 
-func main2() {
+func main() {
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:10000", nil))
 	}()

@@ -131,7 +131,7 @@ func deleteExamples(db *sql.DB) {
 
 	// Simple DELETE
 	// DELETE FROM users WHERE 1 = 1 AND name = ?
-	DELETE().FROM("users").WHERE(map[string]any{"AND name = ?": "John Doe"}).DryRun(context.Background())
+	DELETE().FROM("users").WHERE(map[string]any{"AND name = ?": "John Doe"}).DryRun(context.Background(), nil)
 }
 
 func transactionExamples(db *sql.DB) {

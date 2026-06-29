@@ -1,3 +1,5 @@
+//go:build ignore
+
 package example
 
 import (
@@ -17,7 +19,11 @@ func dbInit() {
 		"db_charset": "utf8mb4",
 		"db_type":    "mysql",
 	}
-	err := .InitDB(dbConf["db_type"], &dbConf)
+	var err error
+	_ = dbConf
+	_ = err
+	db := gdbtmp.New()
+	_ = db
 	if err != nil {
 		fmt.Println(err)
 	}

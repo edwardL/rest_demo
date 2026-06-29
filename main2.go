@@ -14,6 +14,7 @@ import (
 	"rest_demo/pkg/cfgstruct"
 	"rest_demo/pkg/db"
 	"rest_demo/pkg/jwt"
+	"rest_demo/pkg/llm"
 	"rest_demo/pkg/log"
 	"rest_demo/pkg/payment/wechat"
 	"rest_demo/pkg/process"
@@ -31,6 +32,7 @@ type Config struct {
 	Service   service.Config
 	WechatPay wechat.WeChatPayConfig
 	Cache     cache.Config
+	LLM       llm.Config
 }
 
 var (
@@ -155,7 +157,7 @@ func cmdRun(cmd *cobra.Command, args []string) (err error) {
 
 	//notice.Init(&cfg.Notice)
 	_log := log.NewLog(&cfg.Log)
-	app, fn, err := wire.NewApp(ctx, _log, &cfg.Db, &cfg.Api, &cfg.Service, &cfg.JWT, &cfg.Redis, &cfg.WechatPay, &cfg.Cache)
+	app, fn, err := wire.NewApp(ctx, _log, &cfg.Db, &cfg.Api, &cfg.Service, &cfg.JWT, &cfg.Redis, &cfg.WechatPay, &cfg.Cache, &cfg.LLM)
 	if err != nil {
 		return err
 	}

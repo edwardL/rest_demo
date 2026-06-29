@@ -55,6 +55,25 @@ func (d *Db) syncRes(r *OrmResult) *OrmResult {
 	return r
 }
 
+func (d *Db) execWithTx(tx *sql.Tx, sqlStr string, args ...any) (err error, affectRecs int64, lastAffectId int64) {
+	if tx != nil {
+		result, e := tx.ExecContext(d.ctx, sqlStr, args...)
+		if e != nil {
+			return e, 0, 0
+		}
+		affectRecs, _ = result.RowsAffected()
+		lastAffectId, _ = result.LastInsertId()
+		return nil, affectRecs, lastAffectId
+	}
+	result, e := d.db.ExecContext(d.ctx, sqlStr, args...)
+	if e != nil {
+		return e, 0, 0
+	}
+	affectRecs, _ = result.RowsAffected()
+	lastAffectId, _ = result.LastInsertId()
+	return nil, affectRecs, lastAffectId
+}
+
 // OrmResult 统一返回结果
 type OrmResult struct {
 	Error error
@@ -208,10 +227,8 @@ func (d *Db) Count(i *int64, f ...string) (r *OrmResult) {
 		return d.syncRes(r)
 	}
 	d.SqlResult = res
-	var tx = ""
 	if d.sqlTx != nil {
-		tx = txKey
-	} else {
+		_ = txKey
 	}
 	if d.err != nil {
 		return d.syncRes(r)
@@ -238,9 +255,9 @@ func (d *Db) Update(column string, val any) (r *OrmResult) {
 	var tx = ""
 	if d.sqlTx != nil {
 		tx = txKey
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, d.sqlTx.Tx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(d.sqlTx.Tx, res.Sql, res.Args...)
 	} else {
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(nil, res.Sql, res.Args...)
 	}
 	d.printLog(time.Since(st).String(), tx, res)
 	return d.syncRes(r)
@@ -261,9 +278,9 @@ func (d *Db) Updates(data any) (r *OrmResult) {
 	var tx = ""
 	if d.sqlTx != nil {
 		tx = txKey
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, d.sqlTx.Tx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(d.sqlTx.Tx, res.Sql, res.Args...)
 	} else {
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(nil, res.Sql, res.Args...)
 	}
 	d.printLog(time.Since(st).String(), tx, res)
 	return d.syncRes(r)
@@ -284,9 +301,9 @@ func (d *Db) UpdateIgnore(data any) (r *OrmResult) {
 	var tx = ""
 	if d.sqlTx != nil {
 		tx = txKey
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.TxExecUpdateWithCtxAndShowFlag(d.ctx, d.sqlTx.Tx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(d.sqlTx.Tx, res.Sql, res.Args...)
 	} else {
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.ExecUpdateWithCtxAndShowFlag(d.ctx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(nil, res.Sql, res.Args...)
 	}
 	d.printLog(time.Since(st).String(), tx, res)
 	return d.syncRes(r)
@@ -360,9 +377,9 @@ func (d *Db) save(batchArray []map[string]any) (r *OrmResult) {
 	var tx = ""
 	if d.sqlTx != nil {
 		tx = txKey
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, d.sqlTx.Tx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(d.sqlTx.Tx, res.Sql, res.Args...)
 	} else {
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(nil, res.Sql, res.Args...)
 	}
 	d.printLog(time.Since(st).String(), tx, res)
 	return d.syncRes(r)
@@ -383,9 +400,9 @@ func (d *Db) Delete(t ...string) (r *OrmResult) {
 	var tx = ""
 	if d.sqlTx != nil {
 		tx = txKey
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.TxExecDeleteWithCtxAndShowFlag(d.ctx, d.sqlTx.Tx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(d.sqlTx.Tx, res.Sql, res.Args...)
 	} else {
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.ExecDeleteWithCtxAndShowFlag(d.ctx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(nil, res.Sql, res.Args...)
 	}
 	d.printLog(time.Since(st).String(), tx, res)
 	return d.syncRes(r)
@@ -412,9 +429,9 @@ func (d *Db) Create(data any) (r *OrmResult) {
 	var tx = ""
 	if d.sqlTx != nil {
 		tx = txKey
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, d.sqlTx.Tx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(d.sqlTx.Tx, res.Sql, res.Args...)
 	} else {
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(nil, res.Sql, res.Args...)
 	}
 	d.printLog(time.Since(st).String(), tx, res)
 	return d.syncRes(r)
@@ -464,9 +481,9 @@ func (d *Db) createInBatches(data []map[string]any) (r *OrmResult) {
 	var tx = ""
 	if d.sqlTx != nil {
 		tx = txKey
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, d.sqlTx.Tx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(d.sqlTx.Tx, res.Sql, res.Args...)
 	} else {
-		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.db.(d.ctx, res.Sql, d.writeHhDbLog, res.Args...)
+		d.err, d.execResult.AffectRecs, d.execResult.LastAffectId = d.execWithTx(nil, res.Sql, res.Args...)
 	}
 	d.printLog(time.Since(st).String(), tx, res)
 	return d.syncRes(r)
@@ -600,7 +617,7 @@ func (d *Db) Table(table any, args ...any) (db *Db) {
 // Clone 复制一个实例
 func (d *Db) Clone() (db *Db) {
 	return &Db{
-		db:                 hhdb.GetDBOP(),
+		db:                   d.db,
 		sqlTx:                nil,
 		log:                  d.log,
 		gs:                   d.gs.Clone(),
@@ -890,30 +907,38 @@ func (d *Db) Maps() (result []map[string]any, err error) {
 		return nil, d.err
 	}
 	d.SqlResult = res
-	var reResultsByList hhdb.ReResultsByMap01
 	var tx = ""
 	if d.sqlTx != nil {
 		tx = txKey
-		reResultsByList = d.db.(d.ctx, d.sqlTx.Tx, res.Sql, d.writeHhDbLog, res.Args...)
-	} else {
-		reResultsByList = d.db.(d.ctx, res.Sql, d.writeHhDbLog, res.Args...)
+		_ = tx
 	}
-	//d.listResultsByList = reResultsByList
-	d.err = reResultsByList.
-	d.printLog(reResultsByList..String(), tx, res)
-	if reResultsByList. != nil && d.fieldTypeReplaceFunc != nil {
-		// 新建map防止数据竞争
-		var newMaps = make([]map[string]any, len(.))
-		for k, v := range {
-			var newMap = make(map[string]any, len(v))
-			for mk, mv := range v {
-				newMap[mk] = d.fieldTypeReplaceFunc(mk, mv, NewReadOnlyMap(v))
-			}
-			newMaps[k] = newMap
+	rows, e := d.db.QueryContext(d.ctx, res.Sql, res.Args...)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	cols, _ := rows.Columns()
+	var out []map[string]any
+	for rows.Next() {
+		vals := make([]any, len(cols))
+		for i := range vals {
+			var s string
+			vals[i] = &s
 		}
-		reResultsByList.ReData = newMaps
+		if e := rows.Scan(vals...); e != nil {
+			return nil, e
+		}
+		m := make(map[string]any, len(cols))
+		for i, col := range cols {
+			if s, ok := vals[i].(*string); ok {
+				m[col] = *s
+			} else {
+				m[col] = vals[i]
+			}
+		}
+		out = append(out, m)
 	}
-	return , d.err
+	return out, rows.Err()
 }
 
 // Map 查询map
@@ -934,7 +959,8 @@ func (d *Db) Map() (res map[string]any, err error) {
 // Transaction 闭包事务
 func (d *Db) Transaction(f func(db *DbTx) error) (err error) {
 	var sqlDb *sql.DB
-	err, sqlDb = d.db.()
+	sqlDb = d.db
+	err = nil
 	if err != nil {
 		d.err = err
 		return err
@@ -978,65 +1004,9 @@ func (d *Db) LogLevel(lv LogLevel) (db *Db) {
 }
 
 // Stream 流式查询
-// sc = gdbtmp.StreamCallback(func(d map[string]any|你的结构体) (err error, next bool) {})
 func (d *Db) Stream(sc streamCallbackFace) (r *OrmResult) {
-	var res *Result
-	res, d.err = d.gs.Select()
-	if d.err != nil {
-		return d.syncRes(r)
-	}
-	var taskId string
-	var cols []string
-	d.err, taskId, cols = d.db.(d.ctx, d.writeHhDbLog, res.Sql, res.Args...)
-	if d.err != nil {
-		return d.syncRes(r)
-	}
-	defer d.db.(taskId)
-	var resetOneByOneTimer = 1 * time.Second
-	var resetOneByOne = time.NewTicker(resetOneByOneTimer)
-	defer resetOneByOne.Stop()
-	go func() { // 刷新时间
-		for {
-			select {
-			case <-d.ctx.Done():
-				return
-			case <-resetOneByOne.C:
-				_ = d.db.(taskId)
-			}
-		}
-	}()
-	var stop bool
-	var rows []string
-	var err error
-	var next bool
-	for {
-		select {
-		case <-d.ctx.Done():
-			defLog.CtxDebug(d.ctx, "context Done")
-			return d.syncRes(r)
-		default:
-			err, stop, rows = d.db.(taskId)
-			if err != nil {
-				d.err = errors.Join(d.err, err)
-				return d.syncRes(r)
-			}
-			if stop {
-				return d.syncRes(r)
-			}
-			var m = make(map[string]any, len(cols))
-			for k, v := range rows {
-				m[cols[k]] = v
-			}
-			err, next = sc.call(rows, cols)
-			if err != nil {
-				d.err = errors.Join(d.err, err)
-			}
-			if !next {
-				return d.syncRes(r)
-			}
-			resetOneByOne.Reset(resetOneByOneTimer)
-		}
-	}
+	d.err = errors.New("Stream not implemented")
+	return d.syncRes(r)
 }
 
 // queryToSlices 执行查询返回 [][]string
@@ -1050,18 +1020,30 @@ func (d *Db) queryToSlices() (result [][]string, err error) {
 		return nil, d.err
 	}
 	d.SqlResult = res
-	var reResultsByList hhdb.ReResultsByList
 	var tx = ""
 	if d.sqlTx != nil {
 		tx = txKey
-		reResultsByList = d.db.(d.ctx, d.sqlTx.Tx, res.Sql, d.writeHhDbLog, res.Args...)
-	} else {
-		reResultsByList = d.db.(d.ctx, res.Sql, d.writeHhDbLog, res.Args...)
+		_ = tx
 	}
-	//d.listResultsByList = reResultsByList
-	d.err = reResultsByList.
-	d.printLog(reResultsByList..String(), tx, res)
-	return reResultsByList., d.err
+	rows, e := d.db.QueryContext(d.ctx, res.Sql, res.Args...)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	cols, _ := rows.Columns()
+	var out [][]string
+	for rows.Next() {
+		scanArgs := make([]interface{}, len(cols))
+		vals := make([]string, len(cols))
+		for i := range scanArgs {
+			scanArgs[i] = &vals[i]
+		}
+		if e := rows.Scan(scanArgs...); e != nil {
+			return nil, e
+		}
+		out = append(out, vals)
+	}
+	return out, rows.Err()
 }
 
 // handleArgs 处理参数，兼容子查询
